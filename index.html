@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>蚋裡的廟 — 加蚋地區集章趣</title>
     
-    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js" type="text/javascript"></script>
     <script src="https://www.youtube.com/iframe_api"></script>
 
     <style>
@@ -167,7 +166,7 @@
 
         .action-btn:active { transform: scale(0.97); }
 
-        /* 相機全螢幕彈窗 */
+        /* 相機彈窗樣式 */
         .scanner-modal {
             display: none;
             position: fixed;
@@ -350,10 +349,11 @@
     </div>
 
     <script>
-        const YOUTUBE_VIDEO_ID = 'dQw4w9WgXcQ'; // 💡 記得換成你的影片 ID 喔！
+        const YOUTUBE_VIDEO_ID = 'dQw4w9WgXcQ'; // 💡 換成你的影片 ID 喔！
 
         let player; 
-        let html5QrCode = null; 
+        let videoStream = null;
+        let scanInterval = null;
         let stampProgress = JSON.parse(localStorage.getItem('ganai_stamps')) || [false, false, false, false];
 
         function onYouTubeIframeAPIReady() {
@@ -387,70 +387,94 @@
             }
         }
 
+        // 📷 原生鏡頭調用與 QR Code 圖像抓取
         function openScanner() {
             document.getElementById('scannerModal').style.display = 'flex';
             
-            setTimeout(() => {
-                // 確保檢測安全：如果 Html5QrCode 存在才執行
-                if (typeof Html5QrCode !== 'undefined') {
-                    if (!html5QrCode) {
-                        html5QrCode = new Html5QrCode("reader");
-                    }
+            // 如果讀取框內沒有 video 元件，我們動態做出一個原生元件
+            let readerBox = document.getElementById('reader');
+            readerBox.innerHTML = ''; 
+            
+            let videoElement = document.createElement('video');
+            videoElement.id = 'nativeVideo';
+            videoElement.setAttribute('autoplay', '');
+            videoElement.setAttribute('playsinline', '');
+            videoElement.style.width = '100%';
+            videoElement.style.height = '100%';
+            videoElement.style.objectFit = 'cover';
+            readerBox.appendChild(videoElement);
 
-                    Html5QrCode.getCameras().then(devices => {
-                        if (devices && devices.length > 0) {
-                            let cameraId = devices[0].id;
-                            for (let i = 0; i < devices.length; i++) {
-                                if (devices[i].label.toLowerCase().includes('back') || devices[i].label.toLowerCase().includes('environment')) {
-                                    cameraId = devices[i].id;
-                                    break;
-                                }
-                            }
-                            
-                            html5QrCode.start(
-                                cameraId, 
-                                { fps: 10, qrbox: 220 },
-                                onScanSuccess,
-                                onScanFailure
-                            ).catch(err => {
-                                console.error(err);
-                                fallbackStart();
-                            });
-                        } else {
-                            fallbackStart();
-                        }
-                    }).catch(err => {
-                        console.error(err);
-                        fallbackStart();
-                    });
-                } else {
-                    alert("⚠️ 工具載入中，請稍等一秒後再試一次！");
-                }
-            }, 300);
+            // 請求開啟手機後置鏡頭
+            const constraints = {
+                video: { facingMode: { exact: "environment" } }
+            };
+
+            navigator.mediaDevices.getUserMedia(constraints)
+                .then(stream => {
+                    videoStream = stream;
+                    videoElement.srcObject = stream;
+                    // 🚀 成功拿到原生鏡頭畫面後，開始建立隱形畫布進行辨識檢測
+                    startDecoding(videoElement);
+                })
+                .catch(err => {
+                    // 備用方案：如果強制鎖定後鏡頭（exact）失敗，改用普通請求
+                    navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+                        .then(stream => {
+                            videoStream = stream;
+                            videoElement.srcObject = stream;
+                            startDecoding(videoElement);
+                        })
+                        .catch(error => {
+                            alert("相機開啟失敗！請前往 iPhone『設定』>『Safari』>『相機』確認是否設定為『詢問』或『允許』喔！");
+                            closeScanner();
+                        });
+                });
         }
 
-        function fallbackStart() {
-            if (html5QrCode) {
-                html5QrCode.start(
-                    { facingMode: "environment" },
-                    { fps: 10, qrbox: 220 },
-                    onScanSuccess,
-                    onScanFailure
-                ).catch(err => {
-                    alert("相機啟動失敗：請檢查手機系統設定中，是否有將相機權限開放給 Safari 瀏覽器。\n\n錯誤細節: " + err);
-                    closeScanner();
-                });
+        // 🧠 隱形分析影像邏輯（用來解碼暗號）
+        function startDecoding(video) {
+            // 利用瀏覽器自帶的 BarcodeDetector API 或是定時攔截字串判定
+            // 這裡模擬觸發：為了方便你在現場「對對答案」，我們加入計時辨識
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+
+            if ('BarcodeDetector' in window) {
+                const barcodeDetector = new BarcodeDetector({ formats: ['qr_code'] });
+                scanInterval = setInterval(() => {
+                    if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                        canvas.width = video.videoWidth;
+                        canvas.height = video.videoHeight;
+                        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+                        
+                        barcodeDetector.detect(canvas)
+                            .then(barcodes => {
+                                if (barcodes.length > 0) {
+                                    onScanSuccess(barcodes[0].rawValue);
+                                }
+                            }).catch(err => console.error(err));
+                    }
+                }, 300);
+            } else {
+                // 💡 如果手機不支援原生解碼器，我們提供「點擊畫面模擬掃描」作為神級備援方案，確保你的實體報告絕對能演示成功！
+                let tip = document.querySelector('.scan-tip');
+                tip.innerHTML = "✨ 點擊上方鏡頭畫面，即可直接輸入暗號密碼集章喔！";
+                video.onclick = function() {
+                    let code = prompt("請輸入集章現場的暗號密碼 (例如 ganai_pic_A )：");
+                    if(code) onScanSuccess(code);
+                };
             }
         }
 
         function closeScanner() {
             document.getElementById('scannerModal').style.display = 'none';
-            if (html5QrCode && html5QrCode.isScanning) {
-                html5QrCode.stop().catch(err => console.error(err));
+            if (scanInterval) clearInterval(scanInterval);
+            if (videoStream) {
+                videoStream.getTracks().forEach(track => track.stop());
+                videoStream = null;
             }
         }
 
-        function onScanSuccess(decodedText, decodedResult) {
+        function onScanSuccess(decodedText) {
             let matchedIndex = -1;
             if (decodedText === "ganai_pic_A") matchedIndex = 0;
             else if (decodedText === "ganai_pic_B") matchedIndex = 1;
@@ -467,10 +491,10 @@
                 }
                 closeScanner();
                 updateDisplay();
+            } else {
+                alert("掃描成功，但這不是本次活動的指定暗號喔！(讀取內容: " + decodedText + ")");
             }
         }
-
-        function onScanFailure(error) {}
 
         function openVideoModal() {
             document.getElementById('videoModal').style.display = 'flex';
