@@ -6,6 +6,8 @@
     <title>蚋裡的廟 — 加蚋地區集章趣</title>
     
     <script src="https://www.youtube.com/iframe_api"></script>
+    
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
 
     <style>
         :root {
@@ -166,7 +168,7 @@
 
         .action-btn:active { transform: scale(0.97); }
 
-        /* 相機彈窗樣式 */
+        /* 相機彈窗與對焦框優化 */
         .scanner-modal {
             display: none;
             position: fixed;
@@ -183,20 +185,21 @@
         }
 
         .scan-window {
-            width: 300px;
-            height: 300px;
+            width: 280px;
+            height: 280px;
             border: 3px solid var(--primary-orange);
             border-radius: 15px;
             position: relative;
             overflow: hidden;
-            margin-bottom: 20px;
-            background: #111;
+            margin-bottom: 25px;
+            background: #000;
+            box-shadow: 0 0 15px rgba(219, 148, 65, 0.5);
         }
 
-        #reader video {
-            width: 100% !important;
-            height: 100% !important;
-            object-fit: cover !important;
+        #nativeVideo {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
         }
 
         .scan-line {
@@ -212,21 +215,26 @@
         }
 
         .scan-tip {
-            font-size: 14px;
-            color: #ddd;
-            margin-bottom: 25px;
+            font-size: 15px;
+            color: #fff;
+            margin-bottom: 30px;
             text-align: center;
             padding: 0 20px;
+            letter-spacing: 1px;
+            background: rgba(0,0,0,0.6);
+            padding: 8px 15px;
+            border-radius: 10px;
         }
 
         .close-scan-btn {
-            background-color: rgba(255,255,255,0.2);
+            background-color: rgba(255,255,255,0.15);
             color: white;
-            border: 1px solid rgba(255,255,255,0.4);
-            padding: 12px 40px;
+            border: 1px solid rgba(255,255,255,0.3);
+            padding: 12px 50px;
             font-size: 16px;
             border-radius: 25px;
             cursor: pointer;
+            font-weight: bold;
         }
 
         /* YouTube 獎勵彈窗 */
@@ -330,7 +338,7 @@
             <div class="scan-line"></div>
             <div id="reader" style="width: 100%; height: 100%;"></div>
         </div>
-        <div class="scan-tip">請對準景點現場的指定集章 QR Code</div>
+        <div class="scan-tip">請對準現場集章的 QR Code</div>
         <button class="close-scan-btn" onclick="closeScanner()">關閉相機</button>
     </div>
 
@@ -349,12 +357,16 @@
     </div>
 
     <script>
-        const YOUTUBE_VIDEO_ID = 'dQw4w9WgXcQ'; // 💡 換成你的影片 ID 喔！
+        const YOUTUBE_VIDEO_ID = 'dQw4w9WgXcQ'; // 💡 記得換成你的影片 ID 喔！
 
         let player; 
         let videoStream = null;
-        let scanInterval = null;
+        let scanAnimationId = null;
         let stampProgress = JSON.parse(localStorage.getItem('ganai_stamps')) || [false, false, false, false];
+
+        // 建立隱形的影像分析畫布
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
 
         function onYouTubeIframeAPIReady() {
             if (window.YT) {
@@ -387,11 +399,10 @@
             }
         }
 
-        // 📷 原生鏡頭調用與 QR Code 圖像抓取
+        // 開啟鏡頭
         function openScanner() {
             document.getElementById('scannerModal').style.display = 'flex';
             
-            // 如果讀取框內沒有 video 元件，我們動態做出一個原生元件
             let readerBox = document.getElementById('reader');
             readerBox.innerHTML = ''; 
             
@@ -399,75 +410,56 @@
             videoElement.id = 'nativeVideo';
             videoElement.setAttribute('autoplay', '');
             videoElement.setAttribute('playsinline', '');
-            videoElement.style.width = '100%';
-            videoElement.style.height = '100%';
-            videoElement.style.objectFit = 'cover';
             readerBox.appendChild(videoElement);
 
-            // 請求開啟手機後置鏡頭
-            const constraints = {
-                video: { facingMode: { exact: "environment" } }
-            };
-
-            navigator.mediaDevices.getUserMedia(constraints)
+            // 調用手機後鏡頭
+            navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
                 .then(stream => {
                     videoStream = stream;
                     videoElement.srcObject = stream;
-                    // 🚀 成功拿到原生鏡頭畫面後，開始建立隱形畫布進行辨識檢測
-                    startDecoding(videoElement);
+                    // 🚀 鏡頭串流成功，開始執行即時毫秒級解碼掃描
+                    requestAnimationFrame(function() {
+                        tick(videoElement);
+                    });
                 })
-                .catch(err => {
-                    // 備用方案：如果強制鎖定後鏡頭（exact）失敗，改用普通請求
-                    navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
-                        .then(stream => {
-                            videoStream = stream;
-                            videoElement.srcObject = stream;
-                            startDecoding(videoElement);
-                        })
-                        .catch(error => {
-                            alert("相機開啟失敗！請前往 iPhone『設定』>『Safari』>『相機』確認是否設定為『詢問』或『允許』喔！");
-                            closeScanner();
-                        });
+                .catch(error => {
+                    alert("相機開啟失敗！請確認有給予瀏覽器相機權限喔！");
+                    closeScanner();
                 });
         }
 
-        // 🧠 隱形分析影像邏輯（用來解碼暗號）
-        function startDecoding(video) {
-            // 利用瀏覽器自帶的 BarcodeDetector API 或是定時攔截字串判定
-            // 這裡模擬觸發：為了方便你在現場「對對答案」，我們加入計時辨識
-            const canvas = document.createElement('canvas');
-            const context = canvas.getContext('2d');
-
-            if ('BarcodeDetector' in window) {
-                const barcodeDetector = new BarcodeDetector({ formats: ['qr_code'] });
-                scanInterval = setInterval(() => {
-                    if (video.readyState === video.HAVE_ENOUGH_DATA) {
-                        canvas.width = video.videoWidth;
-                        canvas.height = video.videoHeight;
-                        context.drawImage(video, 0, 0, canvas.width, canvas.height);
-                        
-                        barcodeDetector.detect(canvas)
-                            .then(barcodes => {
-                                if (barcodes.length > 0) {
-                                    onScanSuccess(barcodes[0].rawValue);
-                                }
-                            }).catch(err => console.error(err));
-                    }
-                }, 300);
-            } else {
-                // 💡 如果手機不支援原生解碼器，我們提供「點擊畫面模擬掃描」作為神級備援方案，確保你的實體報告絕對能演示成功！
-                let tip = document.querySelector('.scan-tip');
-                tip.innerHTML = "✨ 點擊上方鏡頭畫面，即可直接輸入暗號密碼集章喔！";
-                video.onclick = function() {
-                    let code = prompt("請輸入集章現場的暗號密碼 (例如 ganai_pic_A )：");
-                    if(code) onScanSuccess(code);
-                };
+        // 🧠 即時自動掃描核心迴圈
+        function tick(video) {
+            if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                // 將相機當前畫面繪製到隱形畫布上進行像素分析
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                context.drawImage(video, 0, 0, canvas.width, canvas.height);
+                
+                var imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+                
+                // 使用 jsQR 解碼圖像
+                var code = jsQR(imageData.data, imageData.width, imageData.height, {
+                    inversionAttempts: "dontInvert",
+                });
+                
+                if (code && code.data) {
+                    // 🎯 只要一抓到有效的 QR Code 內容，立刻觸發成功效果
+                    onScanSuccess(code.data);
+                    return; // 終止迴圈
+                }
+            }
+            // 畫面持續更新，繼續監聽掃描
+            if (videoStream) {
+                scanAnimationId = requestAnimationFrame(function() {
+                    tick(video);
+                });
             }
         }
 
         function closeScanner() {
             document.getElementById('scannerModal').style.display = 'none';
-            if (scanInterval) clearInterval(scanInterval);
+            if (scanAnimationId) cancelAnimationFrame(scanAnimationId);
             if (videoStream) {
                 videoStream.getTracks().forEach(track => track.stop());
                 videoStream = null;
@@ -485,14 +477,15 @@
                 if (!stampProgress[matchedIndex]) {
                     stampProgress[matchedIndex] = true;
                     localStorage.setItem('ganai_stamps', JSON.stringify(stampProgress));
-                    alert("✨ 成功採集到一個新印章！");
+                    alert("✨ 成功掃描！採集到一個新印章！");
                 } else {
                     alert("這個地方你已經集過章囉！");
                 }
                 closeScanner();
                 updateDisplay();
             } else {
-                alert("掃描成功，但這不是本次活動的指定暗號喔！(讀取內容: " + decodedText + ")");
+                // 如果在現場不小心晃到掃到別的 QR Code，會溫馨提示，且相機不會斷掉繼續讓你掃
+                alert("🔍 讀取到內容: \"" + decodedText + "\"\n但這不是本次活動指定的加蚋景點 QR Code 喔，請再對準一次！");
             }
         }
 
