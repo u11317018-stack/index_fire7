@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>蚋裡的廟 — 加蚋地區集章趣</title>
+    
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js" type="text/javascript"></script>
+    <script src="https://www.youtube.com/iframe_api"></script>
+
+    <style>
+        :root {
+            --primary-green: #82c0a6;
+            --primary-orange: #d99441;
+            --primary-red: #bf2c2c;
+            --bg-cream: #fbf9f5;
+            --text-dark: #333333;
+        }
+
+        body {
+            font-family: 'PingFang TC', 'Microsoft JhengHei', sans-serif;
+            background-color: var(--bg-cream);
+            color: var(--text-dark);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            box-sizing: border-box;
+        }
+
+        .header-container {
+            text-align: center;
+            margin-top: 20px;
+            margin-bottom: 30px;
+            border-bottom: 3px double var(--primary-orange);
+            padding-bottom: 15px;
+            width: 100%;
+            max-width: 400px;
+        }
+
+        h1 {
+            color: var(--primary-red);
+            font-size: 32px;
+            margin: 0 0 5px 0;
+            letter-spacing: 2px;
+        }
+
+        .subtitle {
+            color: var(--primary-green);
+            font-size: 18px;
+            font-weight: bold;
+            margin: 0;
+            letter-spacing: 1px;
+        }
+
+        /* 集章卡區域 */
+        .stamp-card {
+            background: white;
+            padding: 25px 20px;
+            border-radius: 20px;
+            box-shadow: 0 10px 25px rgba(217, 148, 65, 0.15);
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+            width: 100%;
+            max-width: 360px;
+            margin-bottom: 30px;
+            box-sizing: border-box;
+            border: 2px solid #f0eae1;
+        }
+
+        .stamp-slot {
+            aspect-ratio: 1;
+            border: 2px dashed #ccc;
+            border-radius: 15px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+            background-color: #fafafa;
+            overflow: hidden;
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        .stamp-slot.active {
+            border: 2px solid var(--primary-red);
+            background-color: #fffbfb;
+        }
+
+        .temple-name {
+            font-size: 12px;
+            font-weight: bold;
+            color: #888;
+            margin-bottom: 8px;
+            z-index: 1;
+            text-align: center;
+            padding: 0 5px;
+        }
+        .stamp-slot.active .temple-name {
+            color: var(--primary-red);
+        }
+
+        .temple-thumb {
+            width: 55%;
+            height: auto;
+            opacity: 0.4;
+            margin-bottom: 8px;
+            transition: opacity 0.4s;
+            z-index: 1;
+        }
+        .stamp-slot.active .temple-thumb {
+            opacity: 0.15;
+        }
+
+        .stamp-status {
+            font-size: 11px;
+            color: #bbb;
+            background: #eee;
+            padding: 2px 6px;
+            border-radius: 10px;
+            z-index: 1;
+        }
+
+        .stamp-mark {
+            display: none;
+            width: 75px;
+            height: 75px;
+            border: 3px solid var(--primary-red);
+            border-radius: 50%;
+            color: var(--primary-red);
+            font-weight: bold;
+            font-size: 13px;
+            text-align: center;
+            justify-content: center;
+            align-items: center;
+            transform: rotate(-15deg);
+            position: absolute;
+            background: rgba(255,255,255,0.85);
+            box-shadow: inset 0 0 4px rgba(191, 44, 44, 0.2);
+            animation: stampDrop 0.3s ease-out forwards;
+            z-index: 2;
+            padding: 5px;
+            box-sizing: border-box;
+        }
+
+        .stamp-slot.active .stamp-mark { display: flex; }
+        .stamp-slot.active .stamp-status { display: none; }
+
+        .action-btn {
+            background-color: var(--primary-green);
+            color: white;
+            border: none;
+            padding: 16px 40px;
+            font-size: 18px;
+            font-weight: bold;
+            border-radius: 50px;
+            cursor: pointer;
+            box-shadow: 0 6px 20px rgba(130, 192, 166, 0.4);
+            transition: all 0.2s;
+            width: 100%;
+            max-width: 360px;
+            text-align: center;
+        }
+
+        .action-btn:active { transform: scale(0.97); }
+
+        /* 相機全螢幕彈窗 */
+        .scanner-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: #000000;
+            z-index: 9999;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+        }
+
+        .scan-window {
+            width: 300px;
+            height: 300px;
+            border: 3px solid var(--primary-orange);
+            border-radius: 15px;
+            position: relative;
+            overflow: hidden;
+            margin-bottom: 20px;
+            background: #111;
+        }
+
+        #reader video {
+            width: 100% !important;
+            height: 100% !important;
+            object-fit: cover !important;
+        }
+
+        .scan-line {
+            width: 100%;
+            height: 3px;
+            background-color: #ff3b30;
+            position: absolute;
+            top: 0;
+            box-shadow: 0 0 8px #ff3b30;
+            animation: scanMove 2s linear infinite;
+            z-index: 99;
+            pointer-events: none;
+        }
+
+        .scan-tip {
+            font-size: 14px;
+            color: #ddd;
+            margin-bottom: 25px;
+            text-align: center;
+            padding: 0 20px;
+        }
+
+        .close-scan-btn {
+            background-color: rgba(255,255,255,0.2);
+            color: white;
+            border: 1px solid rgba(255,255,255,0.4);
+            padding: 12px 40px;
+            font-size: 16px;
+            border-radius: 25px;
+            cursor: pointer;
+        }
+
+        /* YouTube 獎勵彈窗 */
+        .video-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #000000;
+            z-index: 200;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            box-sizing: border-box;
+        }
+
+        .video-container {
+            width: 100%;
+            max-width: 800px;
+            aspect-ratio: 16/9;
+            background: #000;
+            position: relative;
+        }
+
+        .video-container iframe {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%; border: none;
+        }
+
+        .video-ui-layer {
+            text-align: center; color: white; margin-top: 15px; padding: 0 20px;
+        }
+
+        .video-title { font-size: 22px; color: var(--primary-orange); margin-bottom: 5px; font-weight: bold; }
+        .video-hint { font-size: 13px; color: #ffda79; margin-bottom: 10px; }
+        .video-btn-group { display: flex; gap: 15px; margin-top: 15px; justify-content: center; }
+
+        .video-control-btn {
+            background: transparent; border: 1px solid #ffffff; color: white;
+            padding: 8px 20px; border-radius: 20px; cursor: pointer; font-size: 14px;
+        }
+
+        .reset-btn {
+            margin-top: 40px; background: none; border: 1px solid #ccc;
+            color: #999; padding: 6px 15px; border-radius: 20px; cursor: pointer; font-size: 12px;
+        }
+
+        .watch-video-bonus-btn { display: none; background-color: var(--primary-red); margin-top: 15px; }
+
+        @keyframes scanMove {
+            0% { top: 0; } 50% { top: 100%; } 100% { top: 0; }
+        }
+        @keyframes stampDrop {
+            0% { transform: scale(3) rotate(-45deg); opacity: 0; }
+            100% { transform: scale(1) rotate(-15deg); opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header-container">
+        <h1>蚋裡的廟</h1>
+        <div class="subtitle">加蚋地區集章趣</div>
+    </div>
+
+    <div class="stamp-card">
+        <div class="stamp-slot" id="slot-0">
+            <div class="temple-name">廣照宮</div>
+            <img class="temple-thumb" src="templeA.jpg" alt="廣照宮">
+            <div class="stamp-status">未解鎖</div>
+            <div class="stamp-mark">廣照宮印</div>
+        </div>
+        <div class="stamp-slot" id="slot-1">
+            <div class="temple-name">壽德公園塗鴉牆</div>
+            <img class="temple-thumb" src="templeB.jpg" alt="壽德公園">
+            <div class="stamp-status">未解鎖</div>
+            <div class="stamp-mark">壽德公園<br>塗鴉牆印</div>
+        </div>
+        <div class="stamp-slot" id="slot-2">
+            <div class="temple-name">豆芽巷</div>
+            <img class="temple-thumb" src="templeC.jpg" alt="豆芽巷">
+            <div class="stamp-status">未解鎖</div>
+            <div class="stamp-mark">豆芽巷印</div>
+        </div>
+        <div class="stamp-slot" id="slot-3">
+            <div class="temple-name">廣照宮塗鴉</div>
+            <img class="temple-thumb" src="templeD.jpg" alt="廣照宮塗鴉">
+            <div class="stamp-status">未解鎖</div>
+            <div class="stamp-mark">廣照宮<br>塗鴉印</div>
+        </div>
+    </div>
+
+    <button class="action-btn" id="mainScanBtn" onclick="openScanner()">📷 開啟相機掃描圖片</button>
+    <button class="action-btn watch-video-bonus-btn" id="bonusVideoBtn" onclick="openVideoModal()">🎬 觀看解鎖影片</button>
+    <button class="reset-btn" onclick="resetGame()">重置集章進度</button>
+
+    <div class="scanner-modal" id="scannerModal">
+        <div class="scan-window">
+            <div class="scan-line"></div>
+            <div id="reader" style="width: 100%; height: 100%;"></div>
+        </div>
+        <div class="scan-tip">請對準景點現場的指定集章 QR Code</div>
+        <button class="close-scan-btn" onclick="closeScanner()">關閉相機</button>
+    </div>
+
+    <div class="video-modal" id="videoModal">
+        <div class="video-container">
+            <div id="ytPlayer"></div>
+        </div>
+        <div class="video-ui-layer">
+            <div class="video-title">🎉 恭喜解鎖彩蛋影片！</div>
+            <div class="video-hint">🔊 提示：如果沒有聲音，請點擊影片裡的喇叭解鎖音量喔！</div>
+            <div class="video-btn-group">
+                <button class="video-control-btn" onclick="replayVideo()">🔁 重新播放</button>
+                <button class="video-control-btn" style="background: var(--primary-orange); border-color: var(--primary-orange);" onclick="closeVideoModal()">返回集章卡</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const YOUTUBE_VIDEO_ID = 'dQw4w9WgXcQ'; // 💡 記得換成你的影片 ID 喔！
+
+        let player; 
+        let html5QrCode = null; 
+        let stampProgress = JSON.parse(localStorage.getItem('ganai_stamps')) || [false, false, false, false];
+
+        function onYouTubeIframeAPIReady() {
+            if (window.YT) {
+                player = new YT.Player('ytPlayer', {
+                    videoId: YOUTUBE_VIDEO_ID,
+                    playerVars: { 'autoplay': 0, 'mute': 1, 'controls': 1, 'rel': 0, 'playsinline': 1 }
+                });
+            }
+        }
+
+        function updateDisplay() {
+            stampProgress.forEach((isStamped, index) => {
+                const slot = document.getElementById(`slot-${index}`);
+                if (isStamped) slot.classList.add('active');
+                else slot.classList.remove('active');
+            });
+
+            if (stampProgress.every(status => status === true)) {
+                document.getElementById('mainScanBtn').style.display = 'none';
+                document.getElementById('bonusVideoBtn').style.display = 'block';
+                if(!sessionStorage.getItem('videoAlreadyShown')) {
+                    setTimeout(() => {
+                        openVideoModal();
+                        sessionStorage.setItem('videoAlreadyShown', 'true');
+                    }, 800); 
+                }
+            } else {
+                document.getElementById('mainScanBtn').style.display = 'block';
+                document.getElementById('bonusVideoBtn').style.display = 'none';
+            }
+        }
+
+        function openScanner() {
+            document.getElementById('scannerModal').style.display = 'flex';
+            
+            setTimeout(() => {
+                // 確保檢測安全：如果 Html5QrCode 存在才執行
+                if (typeof Html5QrCode !== 'undefined') {
+                    if (!html5QrCode) {
+                        html5QrCode = new Html5QrCode("reader");
+                    }
+
+                    Html5QrCode.getCameras().then(devices => {
+                        if (devices && devices.length > 0) {
+                            let cameraId = devices[0].id;
+                            for (let i = 0; i < devices.length; i++) {
+                                if (devices[i].label.toLowerCase().includes('back') || devices[i].label.toLowerCase().includes('environment')) {
+                                    cameraId = devices[i].id;
+                                    break;
+                                }
+                            }
+                            
+                            html5QrCode.start(
+                                cameraId, 
+                                { fps: 10, qrbox: 220 },
+                                onScanSuccess,
+                                onScanFailure
+                            ).catch(err => {
+                                console.error(err);
+                                fallbackStart();
+                            });
+                        } else {
+                            fallbackStart();
+                        }
+                    }).catch(err => {
+                        console.error(err);
+                        fallbackStart();
+                    });
+                } else {
+                    alert("⚠️ 工具載入中，請稍等一秒後再試一次！");
+                }
+            }, 300);
+        }
+
+        function fallbackStart() {
+            if (html5QrCode) {
+                html5QrCode.start(
+                    { facingMode: "environment" },
+                    { fps: 10, qrbox: 220 },
+                    onScanSuccess,
+                    onScanFailure
+                ).catch(err => {
+                    alert("相機啟動失敗：請檢查手機系統設定中，是否有將相機權限開放給 Safari 瀏覽器。\n\n錯誤細節: " + err);
+                    closeScanner();
+                });
+            }
+        }
+
+        function closeScanner() {
+            document.getElementById('scannerModal').style.display = 'none';
+            if (html5QrCode && html5QrCode.isScanning) {
+                html5QrCode.stop().catch(err => console.error(err));
+            }
+        }
+
+        function onScanSuccess(decodedText, decodedResult) {
+            let matchedIndex = -1;
+            if (decodedText === "ganai_pic_A") matchedIndex = 0;
+            else if (decodedText === "ganai_pic_B") matchedIndex = 1;
+            else if (decodedText === "ganai_pic_C") matchedIndex = 2;
+            else if (decodedText === "ganai_pic_D") matchedIndex = 3;
+
+            if (matchedIndex !== -1) {
+                if (!stampProgress[matchedIndex]) {
+                    stampProgress[matchedIndex] = true;
+                    localStorage.setItem('ganai_stamps', JSON.stringify(stampProgress));
+                    alert("✨ 成功採集到一個新印章！");
+                } else {
+                    alert("這個地方你已經集過章囉！");
+                }
+                closeScanner();
+                updateDisplay();
+            }
+        }
+
+        function onScanFailure(error) {}
+
+        function openVideoModal() {
+            document.getElementById('videoModal').style.display = 'flex';
+            if (player && typeof player.playVideo === 'function') {
+                player.mute(); player.seekTo(0); player.playVideo();
+            }
+        }
+
+        function closeVideoModal() {
+            document.getElementById('videoModal').style.display = 'none';
+            if (player && typeof player.pauseVideo === 'function') player.pauseVideo();
+        }
+
+        function replayVideo() {
+            if (player && typeof player.playVideo === 'function') { player.seekTo(0); player.playVideo(); }
+        }
+
+        function resetGame() {
+            if (confirm("確定要重置所有進度嗎？")) {
+                stampProgress = [false, false, false, false];
+                localStorage.setItem('ganai_stamps', JSON.stringify(stampProgress));
+                sessionStorage.removeItem('videoAlreadyShown');
+                updateDisplay();
+            }
+        }
+
+        updateDisplay();
+    </script>
+</body>
+</html>
